@@ -23,9 +23,28 @@ services:
     volumes:
       - ./:/var/www
       - ./.docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - client-portal-network
+
+  db:
+    image: mysql:8.0
+    container_name: client-portal-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: client_portal
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_PASSWORD: password
+      MYSQL_USER: user
+    volumes:
+      - db_data:/var/lib/mysql
     networks:
       - client-portal-network
 
 networks:
   client-portal-network:
     driver: bridge
+
+volumes:
+  db_data:
