@@ -31,12 +31,23 @@ class MixRadiusService
     {
         try {
             // We try the most likely endpoint structure
-            $response = Http::withHeaders([
+            $headers = [
                 'Key' => $this->key,
                 'Secret' => $this->secret,
-                'User-Agent' => 'ParameterRadius/1.0',
-            ])->withoutVerifying() // API uses self-signed or specific port
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept' => 'application/json',
+            ];
+
+            $response = Http::withHeaders($headers)
+              ->withoutVerifying()
               ->get("{$this->baseUrl}/api/public/v1/customer");
+
+            // If singular fails, try plural (common in MixRadius versions)
+            if (!$response->successful()) {
+                $response = Http::withHeaders($headers)
+                  ->withoutVerifying()
+                  ->get("{$this->baseUrl}/api/public/v1/customers");
+            }
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -60,7 +71,15 @@ class MixRadiusService
      */
     public function syncCustomers(): int
     {
+        Log::info("MixRadius Sync: Fetching customers from API...");
         $customersData = $this->getCustomers();
+        
+        if (empty($customersData)) {
+            Log::warning("MixRadius Sync: No customer data received (empty list or API error).");
+            return 0;
+        }
+
+        Log::info("MixRadius Sync: Found " . count($customersData) . " customers. Starting mapping...");
         $count = 0;
 
         foreach ($customersData as $data) {
