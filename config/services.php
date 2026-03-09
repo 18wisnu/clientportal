@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'mixradius' => [
+        'base_url' => env('MIX_RADIUS_BASE_URL'),
+        'key' => env('MIX_RADIUS_KEY'),
+        'secret' => env('MIX_RADIUS_SECRET'),
+    ],
+
 ];

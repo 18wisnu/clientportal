@@ -13,9 +13,13 @@ class MixRadiusService
 
     public function __construct()
     {
-        $this->baseUrl = config('services.mixradius.base_url', env('MIX_RADIUS_BASE_URL'));
-        $this->key = config('services.mixradius.key', env('MIX_RADIUS_KEY'));
-        $this->secret = config('services.mixradius.secret', env('MIX_RADIUS_SECRET'));
+        $this->baseUrl = config('services.mixradius.base_url') ?? '';
+        $this->key = config('services.mixradius.key') ?? '';
+        $this->secret = config('services.mixradius.secret') ?? '';
+
+        if (empty($this->baseUrl)) {
+            Log::error("MixRadius Configuration Error: MIX_RADIUS_BASE_URL is missing.");
+        }
     }
 
     /**
@@ -30,6 +34,7 @@ class MixRadiusService
             $response = Http::withHeaders([
                 'Key' => $this->key,
                 'Secret' => $this->secret,
+                'User-Agent' => 'ParameterRadius/1.0',
             ])->withoutVerifying() // API uses self-signed or specific port
               ->get("{$this->baseUrl}/api/public/v1/customer");
 
