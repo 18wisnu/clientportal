@@ -30,41 +30,61 @@ class MixRadiusService
     public function getCustomers(): array
     {
         try {
-            $headers = [
-                'Key' => $this->key,
-                'Secret' => $this->secret,
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept' => 'application/json',
+            // 1. Try different base URLs (with and without port)
+            $baseUrls = [$this->baseUrl];
+            if (str_contains($this->baseUrl, ':973')) {
+                $baseUrls[] = str_replace(':973', '', $this->baseUrl);
+            }
+
+            // 2. Try different header combinations
+            $headerSets = [
+                ['Key' => $this->key, 'Secret' => $this->secret],
+                ['X-API-KEY' => $this->key, 'X-API-SECRET' => $this->secret],
+                ['Api-Key' => $this->key, 'Api-Secret' => $this->secret],
             ];
 
-            $prefixes = ['', '/rad-dashboard', '/rad-settings'];
+            // 3. Try different path patterns
             $paths = [
+                "/api/client/v1/customer",
+                "/api/client/v1/customers",
                 "/api/public/v1/customer",
                 "/api/public/v1/customers",
                 "/api/v1/customer",
-                "/api/v1/customers",
+                "/rad-dashboard/api/v1/customer",
                 "/api/public/customer",
             ];
 
-            foreach ($prefixes as $prefix) {
-                foreach ($paths as $path) {
-                    $url = rtrim($this->baseUrl, '/') . $prefix . $path;
-                    $response = Http::withHeaders($headers)->withoutVerifying()->get($url);
-                    
-                    $body = $response->body();
-                    Log::debug("Testing MixRadius Endpoint: {$url} | Status: " . $response->status() . " | Body: " . substr($body, 0, 100));
+            foreach ($baseUrls as $baseUrl) {
+                foreach ($headerSets as $headers) {
+                    $fullHeaders = array_merge($headers, [
+                        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept' => 'application/json',
+                    ]);
 
-                    if ($response->successful()) {
-                        $data = $response->json();
-                        if (!empty($data) && (isset($data['data']) || isset($data[0]))) {
-                            Log::info("Success! Found endpoint: {$prefix}{$path}");
-                            return $data['data'] ?? $data ?? [];
+                    foreach ($paths as $path) {
+                        $url = rtrim($baseUrl, '/') . $path;
+                        $response = Http::withHeaders($fullHeaders)->withoutVerifying()->get($url);
+                        
+                        $body = $response->body();
+                        Log::debug("Testing MixRadius: {$url} | Headers: " . array_keys($headers)[0] . " | Status: " . $response->status());
+
+                        if ($response->successful()) {
+                            // Detect if it's a JS redirect or HTML login page
+                            if (str_contains($body, '<script>') || str_contains($body, '<!DOCTYPE html>')) {
+                                continue;
+                            }
+
+                            $data = $response->json();
+                            if (!empty($data) && (isset($data['data']) || isset($data[0]) || isset($data['status']))) {
+                                Log::info("Success! Found endpoint: {$url}");
+                                return $data['data'] ?? $data ?? [];
+                            }
                         }
                     }
                 }
             }
 
-            Log::error("MixRadius Sync: All tested endpoints failed or returned empty data.");
+            Log::error("MixRadius Sync: Exhausted all endpoint and header discovery variants without success.");
             return [];
         } catch (\Exception $e) {
             Log::error("MixRadius Connection Error: " . $e->getMessage());
