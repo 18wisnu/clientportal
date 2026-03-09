@@ -1,0 +1,10 @@
+node_modules
+vendor
+.git
+.env
+storage/*.key
+.phpunit.result.cache
+tests
+docker-compose.yml
+Dockerfile
+.docker
