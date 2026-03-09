@@ -30,7 +30,6 @@ class MixRadiusService
     public function getCustomers(): array
     {
         try {
-            // We try the most likely endpoint structure
             $headers = [
                 'Key' => $this->key,
                 'Secret' => $this->secret,
@@ -38,25 +37,33 @@ class MixRadiusService
                 'Accept' => 'application/json',
             ];
 
-            $response = Http::withHeaders($headers)
-              ->withoutVerifying()
-              ->get("{$this->baseUrl}/api/public/v1/customer");
+            $endpoints = [
+                "/api/public/v1/customer",
+                "/api/public/v1/customers",
+                "/api/public/customer",
+                "/api/clientarea/v1/customer",
+                "/api/v1/customer",
+            ];
 
-            // If singular fails, try plural (common in MixRadius versions)
-            if (!$response->successful()) {
-                $response = Http::withHeaders($headers)
-                  ->withoutVerifying()
-                  ->get("{$this->baseUrl}/api/public/v1/customers");
+            foreach ($endpoints as $endpoint) {
+                $url = rtrim($this->baseUrl, '/') . $endpoint;
+                $response = Http::withHeaders($headers)->withoutVerifying()->get($url);
+                
+                Log::debug("Testing MixRadius Endpoint: {$url} | Status: " . $response->status());
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (!empty($data)) {
+                        Log::info("Success! Found endpoint: {$endpoint}");
+                        Log::debug("MixRadius API Response: " . json_encode($data));
+                        return $data['data'] ?? $data ?? [];
+                    } else {
+                        Log::debug("Endpoint {$endpoint} returned empty body.");
+                    }
+                }
             }
 
-            if ($response->successful()) {
-                $data = $response->json();
-                Log::debug("MixRadius API Response: " . json_encode($data));
-                return $data['data'] ?? $data ?? [];
-            }
-
-            Log::error("MixRadius API Error: " . $response->status() . " - " . ($response->json() ? json_encode($response->json()) : $response->body()));
-            
+            Log::error("MixRadius Sync: All tested endpoints failed or returned empty data.");
             return [];
         } catch (\Exception $e) {
             Log::error("MixRadius Connection Error: " . $e->getMessage());
