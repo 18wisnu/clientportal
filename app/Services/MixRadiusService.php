@@ -30,63 +30,68 @@ class MixRadiusService
     public function getCustomers(): array
     {
         try {
-            // 1. Try different base URLs
-            $baseUrls = [$this->baseUrl];
-            if (str_contains($this->baseUrl, ':973')) {
-                $baseUrls[] = str_replace(':973', '', $this->baseUrl);
-            }
-
-            // 2. Try different authentication methods
-            $authMethods = [
-                ['headers' => ['Key' => $this->key, 'Secret' => $this->secret]],
-                ['headers' => ['X-API-KEY' => $this->key, 'X-API-SECRET' => $this->secret]],
-                ['query' => ['key' => $this->key, 'secret' => $this->secret]],
-                ['query' => ['api_key' => $this->key, 'api_secret' => $this->secret]],
+            // 1. Base URLs to test
+            $host = parse_url($this->baseUrl, PHP_URL_HOST);
+            $baseUrls = [
+                $this->baseUrl, // Original (e.g., with :973)
+                "https://{$host}", // Standard HTTPS
+                "http://{$host}",  // Standard HTTP
             ];
 
-            // 3. Try very broad paths
+            // 2. Authentication header variants
+            $authVariants = [
+                ['Key' => $this->key, 'Secret' => $this->secret],
+                ['Authorization' => 'Bearer ' . $this->secret],
+                ['Authorization' => 'Bearer ' . $this->key],
+                ['Authorization' => 'Basic ' . base64_encode($this->key . ':' . $this->secret)],
+                ['X-API-KEY' => $this->key, 'X-API-SECRET' => $this->secret],
+            ];
+
+            // 3. Common path patterns for MixRadius/ClientArea
             $paths = [
                 "/api/client/v1/customer",
                 "/api/client/v1/customers",
-                "/api/public/v1/customer",
+                "/api/v1/customers",
                 "/api/v1/customer",
-                "/rad-dashboard/api/v1/customer",
+                "/clients/api/v1/customer",
                 "/clientarea/api/v1/customer",
-                "/portal/api/v1/customer",
-                "/member/api/v1/customer",
-                "/public/api/v1/customer",
+                "/rad-dashboard/api/v1/customer",
+                "/api/public/v1/customer",
                 "/api/customer",
-                "/api/customers",
             ];
 
-            foreach ($baseUrls as $baseUrl) {
-                foreach ($authMethods as $auth) {
-                    $headers = $auth['headers'] ?? [];
-                    $query = $auth['query'] ?? [];
+            foreach (array_unique($baseUrls) as $baseUrl) {
+                if (empty($baseUrl)) continue;
 
-                    $fullHeaders = array_merge($headers, [
-                        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                foreach ($authVariants as $auth) {
+                    $headers = array_merge($auth, [
+                        'User-Agent' => 'MixRadius-Client/1.0',
                         'Accept' => 'application/json',
                     ]);
 
                     foreach ($paths as $path) {
                         $url = rtrim($baseUrl, '/') . $path;
-                        $response = Http::withHeaders($fullHeaders)->withoutVerifying()->get($url, $query);
-                        
-                        $body = $response->body();
-                        $status = $response->status();
-                        
-                        Log::debug("Testing MixRadius: {$url} | Status: {$status} | Body: " . substr($body, 0, 150));
+                        try {
+                            $response = Http::timeout(5)->withHeaders($headers)->withoutVerifying()->get($url);
+                            $status = $response->status();
+                            $body = $response->body();
 
-                        if ($response->successful()) {
-                            if (str_contains($body, '<script>') || str_contains($body, '<!DOCTYPE html>') || str_contains($body, '<html>')) {
+                            // Skip if it's clearly an HTML page (MixRadius redirects to login if unauthorized or hitting web routes)
+                            if ($status == 200 && (str_contains($body, '<html') || str_contains($body, '<script'))) {
                                 continue;
                             }
 
-                            $data = $response->json();
-                            if (!empty($data) && (isset($data['data']) || isset($data[0]) || isset($data['status']))) {
-                                Log::info("Success! Found endpoint: {$url}");
-                                return $data['data'] ?? $data ?? [];
+                            if ($response->successful()) {
+                                $data = $response->json();
+                                if (!empty($data) && (isset($data['data']) || isset($data[0]) || isset($data['status']))) {
+                                    Log::info("Success! Match found: {$url} with " . array_keys($auth)[0]);
+                                    return $data['data'] ?? $data ?? [];
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            // Silently continue for discovery, but log real connection issues if it's the configured URL
+                            if ($baseUrl === $this->baseUrl) {
+                                Log::debug("Failed attempt: {$url} - " . $e->getMessage());
                             }
                         }
                     }
