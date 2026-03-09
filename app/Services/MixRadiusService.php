@@ -40,6 +40,7 @@ class MixRadiusService
 
             if ($response->successful()) {
                 $data = $response->json();
+                Log::debug("MixRadius API Response: " . json_encode($data));
                 return $data['data'] ?? $data ?? [];
             }
 
