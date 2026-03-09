@@ -37,26 +37,29 @@ class MixRadiusService
                 'Accept' => 'application/json',
             ];
 
-            $endpoints = [
+            $prefixes = ['', '/rad-dashboard', '/rad-settings'];
+            $paths = [
                 "/api/public/v1/customer",
                 "/api/public/v1/customers",
-                "/api/public/customer",
-                "/api/clientarea/v1/customer",
                 "/api/v1/customer",
+                "/api/v1/customers",
+                "/api/public/customer",
             ];
 
-            foreach ($endpoints as $endpoint) {
-                $url = rtrim($this->baseUrl, '/') . $endpoint;
-                $response = Http::withHeaders($headers)->withoutVerifying()->get($url);
-                
-                $body = $response->body();
-                Log::debug("Testing MixRadius Endpoint: {$url} | Status: " . $response->status() . " | Body: " . substr($body, 0, 500));
+            foreach ($prefixes as $prefix) {
+                foreach ($paths as $path) {
+                    $url = rtrim($this->baseUrl, '/') . $prefix . $path;
+                    $response = Http::withHeaders($headers)->withoutVerifying()->get($url);
+                    
+                    $body = $response->body();
+                    Log::debug("Testing MixRadius Endpoint: {$url} | Status: " . $response->status() . " | Body: " . substr($body, 0, 100));
 
-                if ($response->successful()) {
-                    $data = $response->json();
-                    if (!empty($data)) {
-                        Log::info("Success! Found endpoint: {$endpoint}");
-                        return $data['data'] ?? $data ?? [];
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        if (!empty($data) && (isset($data['data']) || isset($data[0]))) {
+                            Log::info("Success! Found endpoint: {$prefix}{$path}");
+                            return $data['data'] ?? $data ?? [];
+                        }
                     }
                 }
             }
