@@ -49,16 +49,14 @@ class MixRadiusService
                 $url = rtrim($this->baseUrl, '/') . $endpoint;
                 $response = Http::withHeaders($headers)->withoutVerifying()->get($url);
                 
-                Log::debug("Testing MixRadius Endpoint: {$url} | Status: " . $response->status());
+                $body = $response->body();
+                Log::debug("Testing MixRadius Endpoint: {$url} | Status: " . $response->status() . " | Body: " . substr($body, 0, 500));
 
                 if ($response->successful()) {
                     $data = $response->json();
                     if (!empty($data)) {
                         Log::info("Success! Found endpoint: {$endpoint}");
-                        Log::debug("MixRadius API Response: " . json_encode($data));
                         return $data['data'] ?? $data ?? [];
-                    } else {
-                        Log::debug("Endpoint {$endpoint} returned empty body.");
                     }
                 }
             }
