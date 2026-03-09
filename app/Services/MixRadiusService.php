@@ -30,32 +30,40 @@ class MixRadiusService
     public function getCustomers(): array
     {
         try {
-            // 1. Try different base URLs (with and without port)
+            // 1. Try different base URLs
             $baseUrls = [$this->baseUrl];
             if (str_contains($this->baseUrl, ':973')) {
                 $baseUrls[] = str_replace(':973', '', $this->baseUrl);
             }
 
-            // 2. Try different header combinations
-            $headerSets = [
-                ['Key' => $this->key, 'Secret' => $this->secret],
-                ['X-API-KEY' => $this->key, 'X-API-SECRET' => $this->secret],
-                ['Api-Key' => $this->key, 'Api-Secret' => $this->secret],
+            // 2. Try different authentication methods
+            $authMethods = [
+                ['headers' => ['Key' => $this->key, 'Secret' => $this->secret]],
+                ['headers' => ['X-API-KEY' => $this->key, 'X-API-SECRET' => $this->secret]],
+                ['query' => ['key' => $this->key, 'secret' => $this->secret]],
+                ['query' => ['api_key' => $this->key, 'api_secret' => $this->secret]],
             ];
 
-            // 3. Try different path patterns
+            // 3. Try very broad paths
             $paths = [
                 "/api/client/v1/customer",
                 "/api/client/v1/customers",
                 "/api/public/v1/customer",
-                "/api/public/v1/customers",
                 "/api/v1/customer",
                 "/rad-dashboard/api/v1/customer",
-                "/api/public/customer",
+                "/clientarea/api/v1/customer",
+                "/portal/api/v1/customer",
+                "/member/api/v1/customer",
+                "/public/api/v1/customer",
+                "/api/customer",
+                "/api/customers",
             ];
 
             foreach ($baseUrls as $baseUrl) {
-                foreach ($headerSets as $headers) {
+                foreach ($authMethods as $auth) {
+                    $headers = $auth['headers'] ?? [];
+                    $query = $auth['query'] ?? [];
+
                     $fullHeaders = array_merge($headers, [
                         'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept' => 'application/json',
@@ -63,14 +71,15 @@ class MixRadiusService
 
                     foreach ($paths as $path) {
                         $url = rtrim($baseUrl, '/') . $path;
-                        $response = Http::withHeaders($fullHeaders)->withoutVerifying()->get($url);
+                        $response = Http::withHeaders($fullHeaders)->withoutVerifying()->get($url, $query);
                         
                         $body = $response->body();
-                        Log::debug("Testing MixRadius: {$url} | Headers: " . array_keys($headers)[0] . " | Status: " . $response->status());
+                        $status = $response->status();
+                        
+                        Log::debug("Testing MixRadius: {$url} | Status: {$status} | Body: " . substr($body, 0, 150));
 
                         if ($response->successful()) {
-                            // Detect if it's a JS redirect or HTML login page
-                            if (str_contains($body, '<script>') || str_contains($body, '<!DOCTYPE html>')) {
+                            if (str_contains($body, '<script>') || str_contains($body, '<!DOCTYPE html>') || str_contains($body, '<html>')) {
                                 continue;
                             }
 
@@ -84,7 +93,7 @@ class MixRadiusService
                 }
             }
 
-            Log::error("MixRadius Sync: Exhausted all endpoint and header discovery variants without success.");
+            Log::error("MixRadius Sync: Broad discovery failed to find a valid JSON endpoint.");
             return [];
         } catch (\Exception $e) {
             Log::error("MixRadius Connection Error: " . $e->getMessage());
